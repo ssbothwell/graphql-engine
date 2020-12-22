@@ -1,3 +1,5 @@
+-- TODO (Karthikeyan): This file should be removed. This file hasn't been removed to help with the
+-- conflict resolution
 -- | Types that represent the raw data stored in the catalog. See also: the module documentation for
 -- "Hasura.RQL.DDL.Schema".
 module Hasura.RQL.Types.Catalog
@@ -14,6 +16,7 @@ module Hasura.RQL.Types.Catalog
   , CatalogFunction(..)
   , CatalogCronTrigger(..)
   , CatalogCustomTypes(..)
+  , CatalogRemoteSchemaPermission
   ) where
 
 import           Hasura.Prelude
@@ -183,20 +186,23 @@ instance NFData CatalogCronTrigger
 instance Cacheable CatalogCronTrigger
 $(deriveJSON (aesonDrop 4 snakeCase) ''CatalogCronTrigger)
 
+type CatalogRemoteSchemaPermission = AddRemoteSchemaPermissions
+
 data CatalogMetadata
   = CatalogMetadata
-  { _cmTables               :: ![CatalogTable]
-  , _cmRelations            :: ![CatalogRelation]
-  , _cmPermissions          :: ![CatalogPermission]
-  , _cmEventTriggers        :: ![CatalogEventTrigger]
-  , _cmRemoteSchemas        :: ![AddRemoteSchemaQuery]
-  , _cmFunctions            :: ![CatalogFunction]
-  , _cmAllowlistCollections :: ![CollectionDef]
-  , _cmComputedFields       :: ![CatalogComputedField]
-  , _cmCustomTypes          :: !(CatalogCustomTypes 'Postgres)
-  , _cmActions              :: ![CatalogAction]
-  , _cmRemoteRelationships  :: ![RemoteRelationship]
-  , _cmCronTriggers         :: ![CatalogCronTrigger]
+  { _cmTables                  :: ![CatalogTable]
+  , _cmRelations               :: ![CatalogRelation]
+  , _cmPermissions             :: ![CatalogPermission]
+  , _cmEventTriggers           :: ![CatalogEventTrigger]
+  , _cmRemoteSchemas           :: ![AddRemoteSchemaQuery]
+  , _cmFunctions               :: ![CatalogFunction]
+  , _cmAllowlistCollections    :: ![CollectionDef]
+  , _cmComputedFields          :: ![CatalogComputedField]
+  , _cmCustomTypes             :: !(CatalogCustomTypes 'Postgres)
+  , _cmActions                 :: ![CatalogAction]
+  , _cmRemoteRelationships     :: ![RemoteRelationship]
+  , _cmCronTriggers            :: ![CatalogCronTrigger]
+  , _cmRemoteSchemaPermissions :: ![CatalogRemoteSchemaPermission]
   } deriving (Eq, Generic)
 instance NFData CatalogMetadata
 instance Cacheable CatalogMetadata

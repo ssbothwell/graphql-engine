@@ -34,6 +34,7 @@ import           Hasura.GraphQL.Execute.Prepare
 import           Hasura.GraphQL.Execute.Remote
 import           Hasura.GraphQL.Execute.Resolve
 import           Hasura.GraphQL.Parser
+import           Hasura.Metadata.Class
 import           Hasura.RQL.Types
 import           Hasura.Server.Version                     (HasVersion)
 import           Hasura.Session
@@ -48,7 +49,7 @@ convertDelete
   => Env.Environment
   -> SessionVariables
   -> PGE.MutationRemoteJoinCtx
-  -> IR.AnnDelG 'Postgres UnpreparedValue
+  -> IR.AnnDelG 'Postgres (UnpreparedValue 'Postgres)
   -> Bool
   -> m (tx EncJSON)
 convertDelete env usrVars remoteJoinCtx deleteOperation stringifyNum = do
@@ -66,7 +67,7 @@ convertUpdate
   => Env.Environment
   -> SessionVariables
   -> PGE.MutationRemoteJoinCtx
-  -> IR.AnnUpdG 'Postgres UnpreparedValue
+  -> IR.AnnUpdG 'Postgres (UnpreparedValue 'Postgres)
   -> Bool
   -> m (tx EncJSON)
 convertUpdate env usrVars remoteJoinCtx updateOperation stringifyNum = do
@@ -86,7 +87,7 @@ convertInsert
   => Env.Environment
   -> SessionVariables
   -> PGE.MutationRemoteJoinCtx
-  -> IR.AnnInsert 'Postgres UnpreparedValue
+  -> IR.AnnInsert 'Postgres (UnpreparedValue 'Postgres)
   -> Bool
   -> m (tx EncJSON)
 convertInsert env usrVars remoteJoinCtx insertOperation stringifyNum = do
@@ -102,6 +103,7 @@ convertMutationAction
   ::( HasVersion
     , MonadIO m
     , MonadError QErr m
+    , MonadMetadataStorage (MetadataStorageT m)
     , Tracing.MonadTrace m
     , Tracing.MonadTrace tx
     , MonadIO tx
@@ -112,12 +114,13 @@ convertMutationAction
   -> UserInfo
   -> HTTP.Manager
   -> HTTP.RequestHeaders
-  -> ActionMutation 'Postgres UnpreparedValue
+  -> ActionMutation 'Postgres (UnpreparedValue 'Postgres)
   -> m (tx EncJSON, HTTP.ResponseHeaders)
 convertMutationAction env logger userInfo manager reqHeaders = \case
-  AMSync s  -> (_aerTransaction &&& _aerHeaders) <$>
+  AMSync s  -> ((unActionExecuteTx . _aerExecution) &&& _aerHeaders) <$>
     resolveActionExecution env logger userInfo s actionExecContext
-  AMAsync s -> noResponseHeaders <$> resolveActionMutationAsync s reqHeaders userSession
+  AMAsync s -> (noResponseHeaders . unActionExecuteTx) <$>
+               liftEitherM (runMetadataStorageT $ resolveActionMutationAsync s reqHeaders userSession)
   where
     userSession = _uiSession userInfo
     actionExecContext = ActionExecContext manager reqHeaders $ _uiSession userInfo
@@ -128,6 +131,7 @@ convertMutationSelectionSet
      , Tracing.MonadTrace m
      , MonadIO m
      , MonadError QErr m
+     , MonadMetadataStorage (MetadataStorageT m)
      , MonadTx tx
      , Tracing.MonadTrace tx
      , MonadIO tx
@@ -148,7 +152,7 @@ convertMutationSelectionSet env logger gqlContext SQLGenCtx{stringifyNum} userIn
     throw400 ValidationFailed "no mutations exist"
   -- Parse the GraphQL query into the RQL AST
   (unpreparedQueries, _reusability)
-    :: (OMap.InsOrdHashMap G.Name (MutationRootField UnpreparedValue), QueryReusability)
+    :: (OMap.InsOrdHashMap G.Name (MutationRootField (UnpreparedValue 'Postgres)), QueryReusability)
     <-  resolveVariables varDefs (fromMaybe Map.empty varValsM) fields
     >>= (mutationParser >>> (`onLeft` reportParseErrors))
 
@@ -157,18 +161,17 @@ convertMutationSelectionSet env logger gqlContext SQLGenCtx{stringifyNum} userIn
       remoteJoinCtx = (manager, reqHeaders, userInfo)
   txs <- for unpreparedQueries \case
     RFDB db -> ExecStepDB . noResponseHeaders <$> case db of
-      MDBInsert s -> convertInsert env userSession remoteJoinCtx s stringifyNum
-      MDBUpdate s -> convertUpdate env userSession remoteJoinCtx s stringifyNum
-      MDBDelete s -> convertDelete env userSession remoteJoinCtx s stringifyNum
+      MDBInsert s   -> convertInsert env userSession remoteJoinCtx s stringifyNum
+      MDBUpdate s   -> convertUpdate env userSession remoteJoinCtx s stringifyNum
+      MDBDelete s   -> convertDelete env userSession remoteJoinCtx s stringifyNum
       MDBFunction s -> convertFunction env userInfo manager reqHeaders s
 
-    RFRemote (remoteSchemaInfo, remoteField) ->
+    RFRemote remoteField -> do
+      RemoteFieldG remoteSchemaInfo resolvedRemoteField <- resolveRemoteField userInfo remoteField
       pure $ buildExecStepRemote
-             remoteSchemaInfo
-             G.OperationTypeMutation
-             varDefs
-             [G.SelectionField remoteField]
-             varValsM
+        remoteSchemaInfo
+        G.OperationTypeMutation
+        $ [G.SelectionField resolvedRemoteField]
     RFAction action     -> ExecStepDB <$> convertMutationAction env logger userInfo manager reqHeaders action
     RFRaw s             -> pure $ ExecStepRaw s
 
@@ -195,7 +198,7 @@ convertFunction
   -> UserInfo
   -> HTTP.Manager
   -> HTTP.RequestHeaders
-  -> IR.AnnSimpleSelG 'Postgres UnpreparedValue
+  -> IR.AnnSimpleSelG 'Postgres (UnpreparedValue 'Postgres)
   -- ^ VOLATILE function as 'SelectExp'
   -> m (tx EncJSON)
 convertFunction env userInfo manager reqHeaders unpreparedQuery = do
