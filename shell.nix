@@ -1,4 +1,5 @@
 { nixpkgs ? import <nixpkgs> {} }:
+#{ nixpkgs ? import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/1aa915c09dfe5d70570a59646df37ea718e93148.tar.gz") {} }:
 let
   inherit (nixpkgs) pkgs;
   project = import ./server/release.nix;

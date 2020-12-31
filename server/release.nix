@@ -6,8 +6,8 @@ let
           graphql-parser = haskellPackagesNew.callCabal2nix "graphql-parser-hs" (pkgs.fetchFromGitHub {
             owner = "hasura";
             repo = "graphql-parser-hs";
-            rev = "a19a4bfcf295a832f6636fb957c2338444c6d486";
-            sha256 = "1911lgwsxpphxngr7yn6kma4y5va1nlyczps65cxfz4hw070d3v5";
+            rev = "f2e51dbde21ad1c596f659144128d80b69254e98";
+            sha256 = "05mvp3f5zhpwxk3hp52n3zis5w7cd6mkhxf844cbd1s63jqzl9i2";
           }){ };
 
           resource-pool = haskellPackagesNew.callCabal2nix "resource-pool" (pkgs.fetchFromGitHub {
@@ -21,11 +21,15 @@ let
           ci-info-hs = haskellPackagesNew.callPackage ./ci-info-hs.nix { };
           immortal = haskellPackagesNew.callPackage ./immortal.nix { };
           dependent-map = pkgs.haskell.lib.doJailbreak haskellPackagesOld.dependent-map;
+          #base16-bytestring = haskellPackagesOld.base16-bytestring_1_0_1_0;
+          #unordered-containers = haskellPackagesNew.callPackage ./unordered-containers.nix { };
+          #aeson = haskellPackagesNew.callPackage ./aeson.nix { };
         };
       };
     };
   };
-  pkgs = import <nixpkgs> { inherit config; };
+  #pkgs = import <nixpkgs> { inherit config; };
+  pkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/1aa915c09dfe5d70570a59646df37ea718e93148.tar.gz") { inherit config; };
 in
   pkgs.haskellPackages.callPackage ./default.nix { }
 #{
