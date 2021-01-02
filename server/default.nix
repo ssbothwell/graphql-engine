@@ -1,71 +1,136 @@
-{ mkDerivation, aeson, aeson-casing, ansi-wl-pprint, asn1-encoding
-, asn1-types, async, attoparsec, attoparsec-iso8601, auto-update
-, base, base16-bytestring, base64-bytestring, bifunctors, binary
-, byteorder, bytestring, case-insensitive, ci-info, containers
-, criterion, cron, cryptonite, data-has, deepseq, dependent-map
-, dependent-sum, directory, ekg-core, ekg-json, exceptions
-, fast-logger, file-embed, filepath, generic-arbitrary
-, ghc-heap-view, graphql-parser, hashable, hspec, hspec-core
-, hspec-expectations-lifted, http-api-data, http-client
-, http-client-tls, http-types, immortal, insert-ordered-containers
-, jose, kan-extensions, lens, lens-aeson, lifted-async, lifted-base
-, list-t, mime-types, mmorph, monad-control, monad-time
-, monad-validate, mtl, mustache, mwc-probability, mwc-random
-, natural-transformation, network, network-uri
-, optparse-applicative, pem, pg-client, postgresql-binary
-, postgresql-libpq, pretty-simple, process, profunctors, psqueues
-, QuickCheck, quickcheck-instances, random, regex-tdfa, safe
-, scientific, semialign, semigroups, semver, shakespeare, split
-, Spock-core, stdenv, stm, stm-containers, template-haskell, text
-, text-builder, text-conversions, th-lift-instances, these, time
-, transformers, transformers-base, unix, unordered-containers
-, uri-encode, uuid, validation, vector, vector-builder, wai
-, wai-websockets, warp, websockets, witherable, wreq, x509, yaml
-, zlib
-}:
-mkDerivation {
-  pname = "graphql-engine";
-  version = "1.0.0";
-  src = ./.;
-  isLibrary = true;
-  isExecutable = true;
-  libraryHaskellDepends = [
-    aeson aeson-casing ansi-wl-pprint asn1-encoding asn1-types async
-    attoparsec attoparsec-iso8601 auto-update base base16-bytestring
-    base64-bytestring bifunctors binary byteorder bytestring
-    case-insensitive ci-info containers cron cryptonite data-has
-    deepseq dependent-map dependent-sum directory ekg-core ekg-json
-    exceptions fast-logger file-embed filepath generic-arbitrary
-    ghc-heap-view graphql-parser hashable http-api-data http-client
-    http-client-tls http-types immortal insert-ordered-containers jose
-    kan-extensions lens lens-aeson lifted-async lifted-base list-t
-    mime-types mmorph monad-control monad-time monad-validate mtl
-    mustache network network-uri optparse-applicative pem pg-client
-    postgresql-binary postgresql-libpq pretty-simple process
-    profunctors psqueues QuickCheck quickcheck-instances random
-    regex-tdfa safe scientific semialign semigroups semver shakespeare
-    split Spock-core stm stm-containers template-haskell text
-    text-builder text-conversions th-lift-instances these time
-    transformers transformers-base unix unordered-containers uri-encode
-    uuid validation vector vector-builder wai wai-websockets warp
-    websockets witherable wreq x509 yaml zlib
-  ];
-  executableHaskellDepends = [
-    base bytestring ekg-core kan-extensions pg-client text
-    text-conversions time unix
-  ];
-  testHaskellDepends = [
-    aeson base bytestring hspec hspec-core hspec-expectations-lifted
-    http-client http-client-tls http-types jose kan-extensions
-    lifted-base monad-control mtl natural-transformation
-    optparse-applicative pg-client process QuickCheck safe split text
-    time transformers-base unordered-containers
-  ];
-  benchmarkHaskellDepends = [
-    async base bytestring criterion deepseq mwc-probability mwc-random
-    split text vector
-  ];
-  homepage = "https://www.hasura.io";
-  description = "GraphQL API over Postgres";
-  license = stdenv.lib.licenses.asl20;
-}
+let
+  nixpkgsPath = builtins.fetchTarball "https://github.com/NixOS/nixpkgs/archive/99600888934d1804840e06a680699dedc05eea10.tar.gz";
+  pkgs = import nixpkgsPath { inherit config; };
+
+  # Parse version constraints from cabal.project.freeze
+  # I wish Nix had a ($) or (.) operator
+  versionConstraints =
+    # Merge a list of key/value pairs into one big attrset
+    builtins.listToAttrs
+      (
+        # Convert every match to { name = "foo"; value = "1.2.3"; }
+        builtins.map
+          (
+            versionConstraint:
+            {
+              name = builtins.elemAt versionConstraint 0;
+              value = builtins.elemAt versionConstraint 1;
+            }
+          )
+          (
+            # Filter away everything but matches to get [ [package version] ... ].
+            builtins.filter
+              builtins.isList
+              (
+                # Return matches of the regex interleaved with strings in between.
+                # > builtins.split "(a)" "banana"
+                # ["b" ["a"] "n" ["a"] "n" ["a"]]
+                builtins.split "any\.([[:alnum:]-]+) ==([[:digit:].]+)"
+                  (builtins.readFile ./cabal.project.freeze)
+              )
+          )
+      );
+
+  compiler = "ghc8102";
+  config = {
+    packageOverrides = pkgs: {
+      haskellPackages = pkgs.haskell.packages.${compiler}.override {
+        overrides =
+          let
+            # An overlay that simply introduces packages from cabal.project.freeze
+            cabalFreeze = self: super:
+              let
+                pinnedPackages = pkgs.lib.mapAttrs
+                  (
+                    package: version:
+                      # Disable tests since test dependencies are missing from cabal.project.freeze
+                      pkgs.haskell.lib.dontCheck (
+                        self.callHackage package version { }
+                      )
+                  )
+                  versionConstraints;
+              in
+              builtins.removeAttrs pinnedPackages [
+                # Core libraries cannot be built with callHackage since they are provided by ghc.
+                # See pkgs/development/haskell-modules/configuration-ghc-8.10.x.nix
+                "array"
+                "base"
+                "binary"
+                "bytestring"
+                "Cabal"
+                "containers"
+                "deepseq"
+                "directory"
+                "exceptions"
+                "filepath"
+                "ghc-boot"
+                "ghc-boot-th"
+                "ghc-compact"
+                "ghc-heap"
+                "ghc-prim"
+                "ghci"
+                "haskeline"
+                "hpc"
+                "integer-gmp"
+                "libiserv"
+                "mtl"
+                "parsec"
+                "pretty"
+                "process"
+                "rts"
+                "stm"
+                "template-haskell"
+                "terminfo"
+                "text"
+                "time"
+                "transformers"
+                "unix"
+                "xhtml"
+              ];
+            # An overlay that adds graphql and fixes small innacuracies from cabalFreeze
+            graphql = self: super: {
+              # Prevent changing cabal2nix to avoid infinite recursion
+              # callHackage -> cabal2nix -> libraries cabalFreeze overrides -> callHackage
+              cabal2nix =
+                let vanillaPkgs = import nixpkgsPath { }; in
+                vanillaPkgs.haskell.packages.${compiler}.cabal2nix;
+
+              # Prevent infinite recursion since zlib-the-haskell-package depends on a zlib-the-C-package,
+              # and callHackage doesn't know that.
+              zlib = super.zlib.override {
+                inherit (pkgs) zlib;
+              };
+
+              # This library can't be built with profiling.
+              ghc-heap-view = pkgs.haskell.lib.disableLibraryProfiling super.ghc-heap-view;
+
+              graphql-parser = self.callCabal2nix "graphql-parser-hs"
+                (pkgs.fetchFromGitHub {
+                  owner = "hasura";
+                  repo = "graphql-parser-hs";
+                  rev = "f3a20ab6201669bd683d5a0c8580410af264c7d0";
+                  sha256 = "07pc1ig36bk1dd9nvb4pyqxz7mblm59iai5gmpwa1xzwjyqlg3y0";
+                })
+                { };
+
+              resource-pool = self.callCabal2nix "resource-pool"
+                (pkgs.fetchFromGitHub {
+                  owner = "hasura";
+                  repo = "pool";
+                  rev = "0fdfaed4e109ca6a6bf00ed6d79c329626e3bdd4";
+                  sha256 = "1298v5x8lrrvvd5z9wkdyvi76v30zhd3kcbjhryz6gws2mhgpg3a";
+                })
+                { };
+
+              pg-client = self.callPackage ./pg-client.nix { };
+
+              graphql-engine = self.callPackage ./graphql-engine.nix { };
+            };
+          in
+          # This function lets you compose overlays (functions of the form `self: super: {...}`)
+          pkgs.lib.composeExtensions cabalFreeze graphql;
+      };
+    };
+  };
+in
+pkgs
