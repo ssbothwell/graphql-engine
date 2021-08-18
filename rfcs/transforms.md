@@ -45,10 +45,10 @@ data Transforms
 
 -- | The order of evaluation is removeHeaders and then addHeaders
 type HeaderName = Text
+
 data TransformHeaders
   = TransformHeaders
   { addHeaders :: [(HeaderName, TemplateText}]
-  , removeHeaders :: [HeaderName]
   }
 ```
 
@@ -319,12 +319,13 @@ The server also provides a `v1/metadata` type called `test_http_transformer` whi
 ```
 type: test_http_transformer
 args:
-  payload:
+  request:
     webhook_url: {{WEBHOOK_URL}} -- note that payload can reference env vars
-    event:
-      user_id: 1
-      username: bob
-      password: cat
+    request_body:
+      event:
+        user_id: 1
+        username: bob
+        password: cat
   transformer:
     request_method: GET
     request_url: $url/{{event.user_id}}
